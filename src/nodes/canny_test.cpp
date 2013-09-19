@@ -73,46 +73,35 @@ float randbetween(float min, float max)
 	return (max - min) * ( (double)rand() / (double)RAND_MAX ) + min;
 }
 
-float descriptorDistance(const cv::Mat& a, const cv::Mat& b)
+void meanDescriptorDistance(const cv::Mat& features, std::vector<float>& meanDistances, int neighbors = 5)
 {
-	if (a.size != b.size)
-	{
-		return -1;
-	}
-
-	float sum = 0;
-	for (int u = 0; u < a.cols; u++)
-	{
-		float diff = a.data[u] - b.data[u];
-		sum += diff * diff;
-	}
-
-	return sqrt(sum);
-}
-
-std::vector<float> meanDescriptorDistance(const cv::Mat& features, int neighbors = 5)
-{
-	cv::Mat distances = cv::Mat::zeros(features.rows, features.rows, CV_32FC1);
+	int numFeatures = features.rows;
+	//cv::Mat distances = cv::Mat::zeros(numFeatures, numFeatures, CV_32FC1);
 
 	cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create("FlannBased");
 	std::vector<std::vector<cv::DMatch> > matches;
+	meanDistances.resize(numFeatures);
 
-//	for (int i = 0; i < features.rows; i++)
-//	{
-//		cv::Mat a = features.row(i);
+	std::cerr << numFeatures << std::endl;
+	matcher->knnMatch(features, features, matches, neighbors+1);
+	std::cerr << matches.size() << std::endl;
+	std::cerr << matches[0].size() << std::endl;
 
-//		matcher->knnMatch(a, features, matches, neighbors);
-//		std::cerr << matches.size() << std::endl;
-//		for (int j = i + 1; j < features.rows; j++)
-//		{
-//			cv::Mat b = features.row(j);
-//			float d = descriptorDistance(a,b);
-//			distances[i][j] = d;
-//			distances[j][i] = d;
-//		}
-//	}
+	for (int i = 0; i < numFeatures; i++)
+	{
+		float sum = 0;
+		// Skip the first match, since it's us...
+		for (int j = 1; j < neighbors+1; j++)
+		{
+			cv::DMatch a = matches[i][j];
+			sum += a.distance;
+		}
+		sum /= (neighbors);
 
-	return std::vector<float>();
+		meanDistances[i] = sum;
+	}
+
+	std::cerr << meanDistances.size() << std::endl;
 }
 
 
@@ -220,10 +209,26 @@ cv::Mat getKeyPoints(const cv::Mat baseImg, bool useSIFT = false)
 
 
 	// Compute uniqueness of each feature
-	meanDescriptorDistance(baseFeatureDescriptors);
+	std::vector<float> meanDistances;
+	meanDescriptorDistance(baseFeatureDescriptors, meanDistances, 10);
+	std::cerr << meanDistances[0] << std::endl;
 
-	cv::Mat outImg;
-	cv::drawKeypoints(baseImg, baseKeypoints, outImg, keypointColor, cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+	cv::Mat outImg = cv::Mat::zeros(baseImg.rows, baseImg.cols, CV_8UC3);
+	std::vector<cv::KeyPoint> tempKeypoint;
+	//cv::drawKeypoints(baseImg, baseKeypoints, outImg, keypointColor, cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+	for (int i = 0; i < meanDistances.size(); i++)
+	{
+		tempKeypoint.clear();
+		tempKeypoint.push_back(baseKeypoints[i]);
+		if (i < 50) std::cerr << meanDistances[i] << std::endl;
+		cv::drawKeypoints(outImg, tempKeypoint, outImg, cv::Scalar::all(255*exp(-meanDistances[i]/500)), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+	}
+//	std::vector<cv::KeyPoint> tempKeypoint;
+//	tempKeypoint.push_back(baseKeypoints[0]);
+//	cv::drawKeypoints(outImg, tempKeypoint, outImg, cv::Scalar::all(255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+//	tempKeypoint.clear();
+//	tempKeypoint.push_back(baseKeypoints[1]);
+//	cv::drawKeypoints(outImg, tempKeypoint, outImg, cv::Scalar::all(255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 	return outImg;
 }
 
@@ -253,8 +258,7 @@ int main(int argc, char** argv)
 	cv::namedWindow("Filtered", cv::WINDOW_NORMAL);
 	cv::namedWindow("Edges", cv::WINDOW_NORMAL);
 	cv::namedWindow("Features", cv::WINDOW_NORMAL);
-	cv::namedWindow("Segmented", cv::WINDOW_NORMAL);
-	//cv::namedWindow("Whale");
+	//cv::namedWindow("Segmented", cv::WINDOW_NORMAL);
 
 	cv::imshow("Whale", image);
 	cv::imshow("Filtered", smoothImage);
