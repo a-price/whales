@@ -193,25 +193,30 @@ int main(int argc, char** argv)
 	cv::Mat smoothImage;
 	cv::Mat edgeImage;
 	cv::Mat featureImage;
+	cv::Mat segmentedImage;
+	cv::Mat labeledImg;
 
 
 	//cv::resize(image, image, cv::Size(1240,960));
 	cv::bilateralFilter(image, smoothImage, 10, 100, 20);
 	cv::Canny(smoothImage, edgeImage, 500, 100, 3);
 	featureImage = getKeyPoints(smoothImage, true);
+	segment(smoothImage, segmentedImage, labeledImg, 2, 100, 10000);
 
 	cv::namedWindow("Whale", cv::WINDOW_NORMAL);
 	cv::namedWindow("Filtered", cv::WINDOW_NORMAL);
 	cv::namedWindow("Edges", cv::WINDOW_NORMAL);
 	cv::namedWindow("Features", cv::WINDOW_NORMAL);
+	cv::namedWindow("Segmented", cv::WINDOW_NORMAL);
 	//cv::namedWindow("Whale");
 
 	cv::imshow("Whale", image);
 	cv::imshow("Filtered", smoothImage);
 	cv::imshow("Edges", edgeImage);
 	cv::imshow("Features", featureImage);
+	cv::imshow("Segmented", segmentedImage);
 
-	imageHistogram(image);
+	//imageHistogram(image);
 
 	//cv::imwrite("Whale_Features.jpg", featureImage);
 
