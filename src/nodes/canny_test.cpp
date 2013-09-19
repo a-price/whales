@@ -73,7 +73,50 @@ float randbetween(float min, float max)
 	return (max - min) * ( (double)rand() / (double)RAND_MAX ) + min;
 }
 
-cv::Mat loadModelSDF(const std::string file)
+float descriptorDistance(const cv::Mat& a, const cv::Mat& b)
+{
+	if (a.size != b.size)
+	{
+		return -1;
+	}
+
+	float sum = 0;
+	for (int u = 0; u < a.cols; u++)
+	{
+		float diff = a.data[u] - b.data[u];
+		sum += diff * diff;
+	}
+
+	return sqrt(sum);
+}
+
+std::vector<float> meanDescriptorDistance(const cv::Mat& features, int neighbors = 5)
+{
+	cv::Mat distances = cv::Mat::zeros(features.rows, features.rows, CV_32FC1);
+
+	cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create("FlannBased");
+	std::vector<std::vector<cv::DMatch> > matches;
+
+//	for (int i = 0; i < features.rows; i++)
+//	{
+//		cv::Mat a = features.row(i);
+
+//		matcher->knnMatch(a, features, matches, neighbors);
+//		std::cerr << matches.size() << std::endl;
+//		for (int j = i + 1; j < features.rows; j++)
+//		{
+//			cv::Mat b = features.row(j);
+//			float d = descriptorDistance(a,b);
+//			distances[i][j] = d;
+//			distances[j][i] = d;
+//		}
+//	}
+
+	return std::vector<float>();
+}
+
+
+cv::Mat loadPackageImage(const std::string file)
 {
 	cv::Mat outImg;
 	std::string filename;
@@ -103,7 +146,6 @@ cv::Mat loadModelSDF(const std::string file)
 		ROS_ERROR("Failed to retrieve file: %s", e.what());
 		return outImg;
 	}
-
 
 
 	outImg = cv::imread(filename);
@@ -176,6 +218,10 @@ cv::Mat getKeyPoints(const cv::Mat baseImg, bool useSIFT = false)
 	featureDetector->detect(baseImg, baseKeypoints);
 	descriptorExctractor->compute(baseImg, baseKeypoints, baseFeatureDescriptors);
 
+
+	// Compute uniqueness of each feature
+	meanDescriptorDistance(baseFeatureDescriptors);
+
 	cv::Mat outImg;
 	cv::drawKeypoints(baseImg, baseKeypoints, outImg, keypointColor, cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 	return outImg;
@@ -189,7 +235,7 @@ int main(int argc, char** argv)
 	cv::initModule_nonfree();
 
 
-	cv::Mat image = loadModelSDF("package://whales/data/images/Mn020.jpg");
+	cv::Mat image = loadPackageImage("package://whales/data/images/Mn020.jpg");
 	cv::Mat smoothImage;
 	cv::Mat edgeImage;
 	cv::Mat featureImage;
@@ -201,7 +247,7 @@ int main(int argc, char** argv)
 	cv::bilateralFilter(image, smoothImage, 10, 100, 20);
 	cv::Canny(smoothImage, edgeImage, 500, 100, 3);
 	featureImage = getKeyPoints(smoothImage, true);
-	segment(smoothImage, segmentedImage, labeledImg, 2, 100, 10000);
+	//segment(smoothImage, segmentedImage, labeledImg, 2, 100, 10000);
 
 	cv::namedWindow("Whale", cv::WINDOW_NORMAL);
 	cv::namedWindow("Filtered", cv::WINDOW_NORMAL);
@@ -214,7 +260,7 @@ int main(int argc, char** argv)
 	cv::imshow("Filtered", smoothImage);
 	cv::imshow("Edges", edgeImage);
 	cv::imshow("Features", featureImage);
-	cv::imshow("Segmented", segmentedImage);
+	//cv::imshow("Segmented", segmentedImage);
 
 	//imageHistogram(image);
 
