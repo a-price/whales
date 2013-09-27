@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(whales)
+#set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
 set(BUILD_FLAGS "-std=c++0x -Wreturn-type -Wno-enum-compare")
 
 # Add additional CMake files
@@ -10,6 +12,11 @@ find_package(catkin REQUIRED COMPONENTS roscpp roslib fh_segmentation
  message_generation genmsg actionlib actionlib_msgs
  std_msgs sensor_msgs geometry_msgs trajectory_msgs control_msgs diagnostic_msgs visualization_msgs interactive_markers
  tf tf_conversions eigen_conversions rviz class_loader)
+
+# Include Boost
+find_package(Boost REQUIRED)
+include_directories(${BOOST_INCLUDE_DIRS})
+add_definitions(${BOOST_DEFINITIONS})
 
 # Include Eigen for matrices
 find_package(Eigen REQUIRED)

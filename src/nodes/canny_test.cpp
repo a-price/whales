@@ -46,6 +46,10 @@
 #include <ros/ros.h>
 #include <ros/package.h>
 
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/operations.hpp>
+#include <boost/filesystem/path.hpp>
+
 // OpenCV includes
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -57,8 +61,6 @@
 
 
 const cv::Scalar keypointColor = cv::Scalar(0, 255, 0); // Green Keypoints
-const std::string modelName = "boxModel";
-//const std::string modelString = "<?xml version='1.0'?><sdf version='1.4'><model name=\"my_robot\"><static>false</static><link name='link'><pose>0 0 0 0 0 0</pose><collision name='collision'><geometry><box><size>1 .1 .05</size></box></geometry></collision><visual name='visual'><geometry><box><size>1 .1 .05</size></box></geometry></visual></link></model></sdf>";
 
 std::vector<std::string> objectNames;
 
@@ -73,6 +75,56 @@ float randbetween(float min, float max)
 	return (max - min) * ( (double)rand() / (double)RAND_MAX ) + min;
 }
 
+class ColorGenerator
+{
+public:
+	static double interpolate( double val, double y0, double x0, double y1, double x1 )
+	{
+		return (val-x0)*(y1-y0)/(x1-x0) + y0;
+	}
+
+	static double base( double val )
+	{
+		if ( val <= -0.75 ) return 0;
+		else if ( val <= -0.25 ) return interpolate( val, 0.0, -0.75, 1.0, -0.25 );
+		else if ( val <= 0.25 ) return 1.0;
+		else if ( val <= 0.75 ) return interpolate( val, 1.0, 0.25, 0.0, 0.75 );
+		else return 0.0;
+	}
+
+	static double red( double gray )	{ return base( gray - 0.5 );	}
+	static double green( double gray )	{ return base( gray );	}
+	static double blue( double gray )	{ return base( gray + 0.5 );	}
+
+	static cv::Scalar jet(float val, float minVal = -1, float maxVal = 1)
+	{
+		float scaledVal = ((maxVal-minVal) * val) + minVal;
+		return cv::Scalar(blue(scaledVal)*255, green(scaledVal)*255, red(scaledVal)*255);
+	}
+
+};
+
+static const cv::Vec3b bcolors[] =
+{
+	cv::Vec3b(0,0,255),
+	cv::Vec3b(0,128,255),
+	cv::Vec3b(0,255,255),
+	cv::Vec3b(0,255,0),
+	cv::Vec3b(255,128,0),
+	cv::Vec3b(255,255,0),
+	cv::Vec3b(255,0,0),
+	cv::Vec3b(255,0,255),
+	cv::Vec3b(255,255,255)
+};
+	
+
+static void onMouse( int event, int x, int y, int, void* )
+{
+    if( event != cv::EVENT_LBUTTONDOWN )
+		return;
+}
+
+
 void meanDescriptorDistance(const cv::Mat& features, std::vector<float>& meanDistances, int neighbors = 5)
 {
 	int numFeatures = features.rows;
@@ -84,8 +136,8 @@ void meanDescriptorDistance(const cv::Mat& features, std::vector<float>& meanDis
 
 	std::cerr << numFeatures << std::endl;
 	matcher->knnMatch(features, features, matches, neighbors+1);
-	std::cerr << matches.size() << std::endl;
-	std::cerr << matches[0].size() << std::endl;
+	//std::cerr << matches.size() << std::endl;
+	//std::cerr << matches[0].size() << std::endl;
 
 	for (int i = 0; i < numFeatures; i++)
 	{
@@ -101,19 +153,16 @@ void meanDescriptorDistance(const cv::Mat& features, std::vector<float>& meanDis
 		meanDistances[i] = sum;
 	}
 
-	std::cerr << meanDistances.size() << std::endl;
 }
 
-
-cv::Mat loadPackageImage(const std::string file)
+std::string getSystemPath(const std::string packagePath)
 {
-	cv::Mat outImg;
-	std::string filename;
+	std::string filename = "";
 	try
 	{
-		if (file.find("package://") == 0)
+		if (packagePath.find("package://") == 0)
 		{
-			filename = file;
+			filename = packagePath;
 			filename.erase(0, strlen("package://"));
 			size_t pos = filename.find("/");
 			if (pos != std::string::npos)
@@ -126,20 +175,17 @@ cv::Mat loadPackageImage(const std::string file)
 		}
 		else
 		{
-			ROS_ERROR("Failed to locate file: %s", file.c_str());
-			return outImg;
+			ROS_ERROR("Failed to locate file: %s", packagePath.c_str());
+			return filename;
 		}
 	}
 	catch (std::exception& e)
 	{
 		ROS_ERROR("Failed to retrieve file: %s", e.what());
-		return outImg;
+		return filename;
 	}
 
-
-	outImg = cv::imread(filename);
-
-	return outImg;
+	return filename;
 }
 
 void imageHistogram(const cv::Mat src)
@@ -215,65 +261,238 @@ cv::Mat getKeyPoints(const cv::Mat baseImg, bool useSIFT = false)
 
 	cv::Mat outImg = cv::Mat::zeros(baseImg.rows, baseImg.cols, CV_8UC3);
 	std::vector<cv::KeyPoint> tempKeypoint;
-	//cv::drawKeypoints(baseImg, baseKeypoints, outImg, keypointColor, cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+//	cv::drawKeypoints(baseImg, baseKeypoints, outImg, keypointColor, cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+//	cv::imwrite("WhaleFeatures.jpg", outImg);
+
+	const int numLabels = 10;
+	cv::Mat labels;
+	cv::kmeans(baseFeatureDescriptors, numLabels, labels, cv::TermCriteria(cv::TermCriteria::MAX_ITER, 10, 0.5), 1, cv::KMEANS_PP_CENTERS);
+
 	for (int i = 0; i < meanDistances.size(); i++)
 	{
 		tempKeypoint.clear();
 		tempKeypoint.push_back(baseKeypoints[i]);
-		if (i < 50) std::cerr << meanDistances[i] << std::endl;
-		cv::drawKeypoints(outImg, tempKeypoint, outImg, cv::Scalar::all(255*exp(-meanDistances[i]/500)), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+		cv::drawKeypoints(outImg, tempKeypoint, outImg, ColorGenerator::jet(labels.at<int>(i)/(float)numLabels), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 	}
-//	std::vector<cv::KeyPoint> tempKeypoint;
-//	tempKeypoint.push_back(baseKeypoints[0]);
-//	cv::drawKeypoints(outImg, tempKeypoint, outImg, cv::Scalar::all(255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-//	tempKeypoint.clear();
-//	tempKeypoint.push_back(baseKeypoints[1]);
-//	cv::drawKeypoints(outImg, tempKeypoint, outImg, cv::Scalar::all(255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+
+	cv::FileStorage fs1 ("/home/arprice/whale_workspace/src/whales/data/features/test_keypoints.xml", cv::FileStorage::WRITE);
+	cv::FileStorage fs2 ("/home/arprice/whale_workspace/src/whales/data/features/test_descriptors.xml", cv::FileStorage::WRITE);
+	fs1 << "keypoints" << cv::Mat(baseKeypoints);
+	fs2 << "descriptors" << baseFeatureDescriptors;
+
+	//featureDetector->write(fs1);
+	//descriptorExctractor->write(fs2);
 	return outImg;
 }
 
+void testMSER(cv::Mat img)
+{
+	cv::Mat yuv, ellipses;
+	cv::cvtColor(img, yuv, cv::COLOR_BGR2YCrCb);
+	img.copyTo(ellipses);
+
+	std::vector<std::vector<cv::Point> > contours;
+	cv::MSER()(yuv, contours);
+
+	for( int i = (int)contours.size()-1; i >= 0; i-- )
+	{
+		const std::vector<cv::Point>& r = contours[i];
+		for ( int j = 0; j < (int)r.size(); j++ )
+		{
+			cv::Point pt = r[j];
+			ellipses.at<cv::Vec3b>(pt) = bcolors[i%9];
+		}
+
+		// find ellipse
+		cv::RotatedRect box = cv::fitEllipse( r );
+		box.angle = -box.angle;
+
+		box.angle=(float)CV_PI/2-box.angle;
+		ellipse( ellipses, box, cv::Scalar(196,255,255), 2 );
+	}
+
+	int randNum = rand();
+	cv::namedWindow("test" + std::to_string(randNum), cv::WINDOW_NORMAL);
+	cv::imshow("test" + std::to_string(randNum), ellipses);
+}
+
+std::vector<std::string> enumeratePackageDirectory(const std::string packagePath = "package://whales/data/images/")
+{
+	std::vector<std::string> filenames;
+	boost::filesystem::path full_path(getSystemPath(packagePath));
+	if (!boost::filesystem::exists(full_path))
+	{
+		std::cout << "Unable to find '" << packagePath << "'" << std::endl;
+		return filenames;
+	}
+
+	if (boost::filesystem::is_directory(full_path))
+	{
+		std::cout << "Loading directory '" << full_path.string() << "'" << std::endl;
+		boost::filesystem::directory_iterator end_iter;
+		for (boost::filesystem::directory_iterator dir_iter(full_path);
+			 dir_iter != end_iter;
+			 ++dir_iter)
+		{
+			if (boost::filesystem::is_regular_file(dir_iter->status()))
+			{
+				filenames.push_back(full_path.string() + dir_iter->path().filename().string());
+				std::cerr << full_path.string() + dir_iter->path().filename().string() << std::endl;
+			}
+		}
+	}
+
+	return filenames;
+}
+
+const bool use_sift = true;
+const int neighbors = 1;
+
 int main(int argc, char** argv)
 {
-	ros::init(argc, argv, "random_spawn");
-	ros::NodeHandle nh;
-
 	cv::initModule_nonfree();
 
+	// Sets of cv Matrices
+	std::vector<cv::Mat> originalImages;
+	std::vector<cv::Mat> preprocessedImages;
+	std::vector<std::vector<cv::KeyPoint> > keypointSets;
+	std::vector<cv::Mat> descriptorSets;
 
-	cv::Mat image = loadPackageImage("package://whales/data/images/Mn020.jpg");
-	cv::Mat smoothImage;
-	cv::Mat edgeImage;
-	cv::Mat featureImage;
-	cv::Mat segmentedImage;
-	cv::Mat labeledImg;
+	// Load and preprocess all images
+	std::vector<std::string> filenames = enumeratePackageDirectory();
+	if (true)
+	{
+		filenames.clear();
+		filenames.push_back("/home/arprice/whale_workspace/src/whales/data/images/WC_0709C.jpg");
+		filenames.push_back("/home/arprice/whale_workspace/src/whales/data/images/WC_0709A.jpg");
+	}
+	const int numFiles = filenames.size();
 
+	originalImages.reserve(numFiles);
+	preprocessedImages.reserve(numFiles);
+	descriptorSets.reserve(numFiles);
+	for (int imgIdx = 0; imgIdx < numFiles; imgIdx++)
+	{
+		originalImages.push_back(cv::imread(filenames[imgIdx]));
 
-	//cv::resize(image, image, cv::Size(1240,960));
-	cv::bilateralFilter(image, smoothImage, 10, 100, 20);
-	cv::Canny(smoothImage, edgeImage, 500, 100, 3);
-	featureImage = getKeyPoints(smoothImage, true);
-	//segment(smoothImage, segmentedImage, labeledImg, 2, 100, 10000);
+		cv::Mat smoothImage;
+		cv::bilateralFilter(originalImages[imgIdx], smoothImage, 10, 100, 20);
+		preprocessedImages.push_back(smoothImage);
+	}
 
-	cv::namedWindow("Whale", cv::WINDOW_NORMAL);
-	cv::namedWindow("Filtered", cv::WINDOW_NORMAL);
-	cv::namedWindow("Edges", cv::WINDOW_NORMAL);
+	std::cout << "Preprocessed all images." << std::endl;
+
+	// Compute SIFT features and descriptors for all images
+	std::string featureType = use_sift ? "SIFT" : "SURF";//"FAST"; //"SURF" "MSER";
+
+	cv::Ptr<cv::FeatureDetector> featureDetector = cv::FeatureDetector::create("SIFT");
+	cv::Ptr<cv::DescriptorExtractor> descriptorExctractor = cv::DescriptorExtractor::create("SIFT");
+
+	for (int imgIdx = 0; imgIdx < numFiles; imgIdx++)
+	{
+		std::vector<cv::KeyPoint> currentKeypoints;
+		cv::Mat currentFeatureDescriptors;
+
+		// Compute search features
+		featureDetector->detect(preprocessedImages[imgIdx], currentKeypoints);
+		descriptorExctractor->compute(preprocessedImages[imgIdx], currentKeypoints, currentFeatureDescriptors);
+
+		// Store to our database
+		keypointSets.push_back(currentKeypoints);
+		descriptorSets.push_back(currentFeatureDescriptors);
+	}
+
+	// Save results to file for future?
+
+	// Pick a special image and run matching
+	cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create("FlannBased");
+	std::vector<std::vector<cv::DMatch> > matches;
+
+	matcher->add(descriptorSets);
+
+	matcher->knnMatch(descriptorSets[0], matches, neighbors+1);
+
+	std::cerr << "Matches: " << matches.size() << std::endl;
+	std::cerr << "Matches[0]: " <<  matches[0].size() << std::endl;
+
+	//
+	for (int i = 0; i < matches.size(); i++)
+	{
+		matches[i].erase(matches[i].begin());
+	}
+
+	// Get range of feature distances
+	float minD = 10000, maxD = 0;
+	for (int i = 0; i < matches.size(); i++)
+	{
+		cv::DMatch a = matches[i][0];
+		if (a.distance > maxD) { maxD = a.distance; }
+		if (a.distance < minD) { minD = a.distance; }
+	}
+
+	std::vector<int> hist; hist.resize(10);
+	for (int i = 0; i < matches.size(); i++)
+	{
+		cv::DMatch a = matches[i][0];
+		//std::cerr << a.distance << std::endl;
+		if (a.distance > ((maxD-minD)*0.20) + minD)
+		{
+			matches.erase(matches.begin()+i);
+			i--;
+		}
+		int bin = a.distance/(maxD-minD)*10;
+		while (bin >= hist.size()) {hist.push_back(0);}
+		hist[bin]++;
+	}
+
+	for (int i = 0; i < hist.size(); i++)
+	{
+		std::cerr << hist[i] << std::endl;
+	}
+
+	cv::Mat result;
+	cv::drawMatches(originalImages[0], keypointSets[0], originalImages[1], keypointSets[1], matches, result);
 	cv::namedWindow("Features", cv::WINDOW_NORMAL);
-	//cv::namedWindow("Segmented", cv::WINDOW_NORMAL);
+	cv::setMouseCallback("Features", onMouse);
+	cv::imshow("Features", result);
 
-	cv::imshow("Whale", image);
-	cv::imshow("Filtered", smoothImage);
-	cv::imshow("Edges", edgeImage);
-	cv::imshow("Features", featureImage);
+	//testMSER(preprocessedImages[0]);
+	//testMSER(preprocessedImages[1]);
+
+//	cv::Mat image = cv::imread(getSystemPath("package://whales/data/images/0177_11.jpg"));
+//	cv::Mat smoothImage;
+//	cv::Mat edgeImage;
+//	cv::Mat featureImage;
+//	cv::Mat segmentedImage;
+//	cv::Mat labeledImg;
+
+
+//	//cv::resize(image, image, cv::Size(1240,960));
+//	cv::bilateralFilter(image, smoothImage, 10, 100, 20);
+//	cv::Canny(smoothImage, edgeImage, 500, 100, 3);
+//	featureImage = getKeyPoints(smoothImage, true);
+//	//segment(smoothImage, segmentedImage, labeledImg, 2, 100, 10000);
+
+//	cv::namedWindow("Whale", cv::WINDOW_NORMAL);
+//	cv::namedWindow("Filtered", cv::WINDOW_NORMAL);
+//	cv::namedWindow("Edges", cv::WINDOW_NORMAL);
+//	cv::namedWindow("Features", cv::WINDOW_NORMAL);
+//	//cv::namedWindow("Segmented", cv::WINDOW_NORMAL);
+
+//	cv::imshow("Whale", image);
+//	cv::imshow("Filtered", smoothImage);
+//	cv::imshow("Edges", edgeImage);
+//	cv::imshow("Features", featureImage);
 	//cv::imshow("Segmented", segmentedImage);
 
 	//imageHistogram(image);
 
 	//cv::imwrite("Whale_Features.jpg", featureImage);
 
-	while(ros::ok())
+	//while(ros::ok())
 	{
-		ros::spinOnce();
-		cv::waitKey(1);
+		//ros::spinOnce();
+		cv::waitKey(0);
 	}
 
 	return 0;
