@@ -260,11 +260,12 @@ cv::Mat getKeyPoints(const cv::Mat baseImg, bool useSIFT = false)
 	std::cerr << meanDistances[0] << std::endl;
 
 	cv::Mat outImg = cv::Mat::zeros(baseImg.rows, baseImg.cols, CV_8UC3);
+	outImg.setTo(cv::Scalar::all(255));
 	std::vector<cv::KeyPoint> tempKeypoint;
 //	cv::drawKeypoints(baseImg, baseKeypoints, outImg, keypointColor, cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 //	cv::imwrite("WhaleFeatures.jpg", outImg);
 
-	const int numLabels = 10;
+	const int numLabels = 3;
 	cv::Mat labels;
 	cv::kmeans(baseFeatureDescriptors, numLabels, labels, cv::TermCriteria(cv::TermCriteria::MAX_ITER, 10, 0.5), 1, cv::KMEANS_PP_CENTERS);
 
@@ -272,16 +273,14 @@ cv::Mat getKeyPoints(const cv::Mat baseImg, bool useSIFT = false)
 	{
 		tempKeypoint.clear();
 		tempKeypoint.push_back(baseKeypoints[i]);
-		cv::drawKeypoints(outImg, tempKeypoint, outImg, ColorGenerator::jet(labels.at<int>(i)/(float)numLabels), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+		cv::drawKeypoints(outImg, tempKeypoint, outImg, ColorGenerator::jet(labels.at<int>(i)/((float)numLabels-1)), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 	}
 
-	cv::FileStorage fs1 ("/home/arprice/whale_workspace/src/whales/data/features/test_keypoints.xml", cv::FileStorage::WRITE);
-	cv::FileStorage fs2 ("/home/arprice/whale_workspace/src/whales/data/features/test_descriptors.xml", cv::FileStorage::WRITE);
-	fs1 << "keypoints" << cv::Mat(baseKeypoints);
-	fs2 << "descriptors" << baseFeatureDescriptors;
+//	cv::FileStorage fs1 ("/home/arprice/whale_workspace/src/whales/data/features/test_keypoints.xml", cv::FileStorage::WRITE);
+//	cv::FileStorage fs2 ("/home/arprice/whale_workspace/src/whales/data/features/test_descriptors.xml", cv::FileStorage::WRITE);
+//	fs1 << "keypoints" << cv::Mat(baseKeypoints);
+//	fs2 << "descriptors" << baseFeatureDescriptors;
 
-	//featureDetector->write(fs1);
-	//descriptorExctractor->write(fs2);
 	return outImg;
 }
 
@@ -312,8 +311,8 @@ void testMSER(cv::Mat img)
 	}
 
 	int randNum = rand();
-	cv::namedWindow("test" + std::to_string(randNum), cv::WINDOW_NORMAL);
-	cv::imshow("test" + std::to_string(randNum), ellipses);
+	cv::namedWindow("test" + std::to_string(randNum) + ".jpg", cv::WINDOW_NORMAL);
+	cv::imwrite("test" + std::to_string(randNum) + ".jpg", ellipses);
 }
 
 std::vector<std::string> enumeratePackageDirectory(const std::string packagePath = "package://whales/data/images/")
@@ -364,7 +363,7 @@ int main(int argc, char** argv)
 	{
 		filenames.clear();
 		filenames.push_back("/home/arprice/whale_workspace/src/whales/data/images/WC_0709C.jpg");
-		filenames.push_back("/home/arprice/whale_workspace/src/whales/data/images/WC_0709A.jpg");
+		filenames.push_back("/home/arprice/whale_workspace/src/whales/data/images/WC_0709B.jpg");
 	}
 	const int numFiles = filenames.size();
 
@@ -376,7 +375,7 @@ int main(int argc, char** argv)
 		originalImages.push_back(cv::imread(filenames[imgIdx]));
 
 		cv::Mat smoothImage;
-		cv::bilateralFilter(originalImages[imgIdx], smoothImage, 10, 100, 20);
+		cv::bilateralFilter(originalImages[imgIdx], smoothImage, 10, 80, 25);
 		preprocessedImages.push_back(smoothImage);
 	}
 
@@ -435,7 +434,7 @@ int main(int argc, char** argv)
 	{
 		cv::DMatch a = matches[i][0];
 		//std::cerr << a.distance << std::endl;
-		if (a.distance > ((maxD-minD)*0.20) + minD)
+		if (a.distance > ((maxD-minD)*0.30) + minD)
 		{
 			matches.erase(matches.begin()+i);
 			i--;
@@ -452,12 +451,15 @@ int main(int argc, char** argv)
 
 	cv::Mat result;
 	cv::drawMatches(originalImages[0], keypointSets[0], originalImages[1], keypointSets[1], matches, result);
-	cv::namedWindow("Features", cv::WINDOW_NORMAL);
-	cv::setMouseCallback("Features", onMouse);
-	cv::imshow("Features", result);
+	cv::namedWindow("Matches.jpg", cv::WINDOW_NORMAL);
+	cv::setMouseCallback("Matches.jpg", onMouse);
+	cv::imwrite("Matches.jpg", result);
 
-	//testMSER(preprocessedImages[0]);
-	//testMSER(preprocessedImages[1]);
+	testMSER(preprocessedImages[0]);
+	testMSER(preprocessedImages[1]);
+
+	cv::namedWindow("Classes.jpg", cv::WINDOW_NORMAL);
+	cv::imshow("Classes.jpg", getKeyPoints(preprocessedImages[0], true));
 
 //	cv::Mat image = cv::imread(getSystemPath("package://whales/data/images/0177_11.jpg"));
 //	cv::Mat smoothImage;
