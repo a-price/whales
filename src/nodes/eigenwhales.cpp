@@ -84,7 +84,9 @@ int main(int argc, char** argv)
 		// Store
 		originalImages.push_back(temp);
 	}
-	cv::imshow("img", originalImages[0]);
+	//cv::imshow("img", originalImages[0]);
+
+	std::cerr << "Number of Images: " << numFiles << std::endl;
 
 	// Vectorize
 	VectorImage test = vectorize(originalImages[0]);
@@ -105,7 +107,7 @@ int main(int argc, char** argv)
 
 	std::vector<cv::Mat> bases;
 
-	for(int i = 0; i < numFiles-3; i++)
+	for(int i = 0; i < 10; i++)
 	{
 		alias = -basis.col(i).transpose();
 		cv::normalize(best, best, 0, 1.0, cv::NORM_MINMAX, CV_32FC1);
