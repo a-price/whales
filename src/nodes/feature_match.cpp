@@ -39,16 +39,7 @@
  */
 
 
-#include <string>
-#include <fstream>
-#include <streambuf>
-
 #include <ros/ros.h>
-#include <ros/package.h>
-
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/operations.hpp>
-#include <boost/filesystem/path.hpp>
 
 // OpenCV includes
 #include <opencv2/core/core.hpp>
@@ -58,65 +49,11 @@
 #include <opencv2/nonfree/features2d.hpp>
 
 #include "fh_segmentation/fh_segmentation.h"
+#include "whales/common.h"
 
+using namespace whales;
 
 const cv::Scalar keypointColor = cv::Scalar(0, 255, 0); // Green Keypoints
-
-std::vector<std::string> objectNames;
-
-ros::Publisher zPub;
-
-ros::ServiceClient worldInfoClient;
-ros::ServiceClient spawnClient;
-ros::ServiceClient deleteClient;
-
-float randbetween(float min, float max)
-{
-	return (max - min) * ( (double)rand() / (double)RAND_MAX ) + min;
-}
-
-class ColorGenerator
-{
-public:
-	static double interpolate( double val, double y0, double x0, double y1, double x1 )
-	{
-		return (val-x0)*(y1-y0)/(x1-x0) + y0;
-	}
-
-	static double base( double val )
-	{
-		if ( val <= -0.75 ) return 0;
-		else if ( val <= -0.25 ) return interpolate( val, 0.0, -0.75, 1.0, -0.25 );
-		else if ( val <= 0.25 ) return 1.0;
-		else if ( val <= 0.75 ) return interpolate( val, 1.0, 0.25, 0.0, 0.75 );
-		else return 0.0;
-	}
-
-	static double red( double gray )	{ return base( gray - 0.5 );	}
-	static double green( double gray )	{ return base( gray );	}
-	static double blue( double gray )	{ return base( gray + 0.5 );	}
-
-	static cv::Scalar jet(float val, float minVal = -1, float maxVal = 1)
-	{
-		float scaledVal = ((maxVal-minVal) * val) + minVal;
-		return cv::Scalar(blue(scaledVal)*255, green(scaledVal)*255, red(scaledVal)*255);
-	}
-
-};
-
-static const cv::Vec3b bcolors[] =
-{
-	cv::Vec3b(0,0,255),
-	cv::Vec3b(0,128,255),
-	cv::Vec3b(0,255,255),
-	cv::Vec3b(0,255,0),
-	cv::Vec3b(255,128,0),
-	cv::Vec3b(255,255,0),
-	cv::Vec3b(255,0,0),
-	cv::Vec3b(255,0,255),
-	cv::Vec3b(255,255,255)
-};
-	
 
 static void onMouse( int event, int x, int y, int, void* )
 {
@@ -153,39 +90,6 @@ void meanDescriptorDistance(const cv::Mat& features, std::vector<float>& meanDis
 		meanDistances[i] = sum;
 	}
 
-}
-
-std::string getSystemPath(const std::string packagePath)
-{
-	std::string filename = "";
-	try
-	{
-		if (packagePath.find("package://") == 0)
-		{
-			filename = packagePath;
-			filename.erase(0, strlen("package://"));
-			size_t pos = filename.find("/");
-			if (pos != std::string::npos)
-			{
-				std::string package = filename.substr(0, pos);
-				filename.erase(0, pos);
-				std::string package_path = ros::package::getPath(package);
-				filename = package_path + filename;
-			}
-		}
-		else
-		{
-			ROS_ERROR("Failed to locate file: %s", packagePath.c_str());
-			return filename;
-		}
-	}
-	catch (std::exception& e)
-	{
-		ROS_ERROR("Failed to retrieve file: %s", e.what());
-		return filename;
-	}
-
-	return filename;
 }
 
 void imageHistogram(const cv::Mat src)
@@ -315,34 +219,7 @@ void testMSER(cv::Mat img)
 	cv::imwrite("test" + std::to_string(randNum) + ".jpg", ellipses);
 }
 
-std::vector<std::string> enumeratePackageDirectory(const std::string packagePath = "package://whales/data/images/")
-{
-	std::vector<std::string> filenames;
-	boost::filesystem::path full_path(getSystemPath(packagePath));
-	if (!boost::filesystem::exists(full_path))
-	{
-		std::cout << "Unable to find '" << packagePath << "'" << std::endl;
-		return filenames;
-	}
 
-	if (boost::filesystem::is_directory(full_path))
-	{
-		std::cout << "Loading directory '" << full_path.string() << "'" << std::endl;
-		boost::filesystem::directory_iterator end_iter;
-		for (boost::filesystem::directory_iterator dir_iter(full_path);
-			 dir_iter != end_iter;
-			 ++dir_iter)
-		{
-			if (boost::filesystem::is_regular_file(dir_iter->status()))
-			{
-				filenames.push_back(full_path.string() + dir_iter->path().filename().string());
-				std::cerr << full_path.string() + dir_iter->path().filename().string() << std::endl;
-			}
-		}
-	}
-
-	return filenames;
-}
 
 const bool use_sift = true;
 const int neighbors = 1;
