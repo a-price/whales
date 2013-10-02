@@ -63,6 +63,30 @@ inline VectorImage vectorize(const cv::Mat img)
 	return VectorImage((float*)img.data);
 }
 
+double wrapTo2Pi(double x)
+{
+	x = fmod(x, 2*M_PI);
+	if (x < 0)
+		x += 2*M_PI;
+	return x;
+}
+
+inline double angleBetween(double a, double b)
+{
+	return fmod((b-a) + M_PI, 2*M_PI) - M_PI;
+}
+
+float pointScore(const float magnitude, const float orientation, const cv::Point& location, const float targetOrientation, const cv::Point& targetLocation)
+{
+	float dx = targetLocation.x - location.x;
+	float dy = targetLocation.y - location.y;
+	float d = sqrt(dx*dx + dy*dy);
+
+	float dTheta = angleBetween(wrapTo2Pi(targetOrientation), wrapTo2Pi(orientation));
+
+	return sqrt(magnitude) / (sqrt(d+0.1) * (fabs(dTheta) + 0.1));
+}
+
 void findExtrema(const cv::Mat img)
 {
 	int scale = 1;
@@ -70,6 +94,13 @@ void findExtrema(const cv::Mat img)
 	int ksize = 5;
 	int size = 3;
 	int ddepth = CV_32F;
+
+	const cv::Point targetA(5, img.rows/3);
+	const cv::Point targetB(img.cols/2, img.rows/2);
+	const cv::Point targetC(img.cols - 1 - 5, img.rows/3);
+
+	const cv::Point targetD(img.cols/3, 2*img.rows/3);
+	const cv::Point targetE(2*img.cols/3, 2*img.rows/3);
 
 	cv::Mat smooth;
 	cv::Mat edge;
@@ -93,15 +124,12 @@ void findExtrema(const cv::Mat img)
 
 	/// Detecting corners
 	cv::cornerHarris( smooth, corners, blockSize, apertureSize, k, cv::BORDER_DEFAULT );
-	/// Normalizing
-	cv::normalize( corners, corners, 0, 255, cv::NORM_MINMAX, CV_32FC1, cv::Mat() );
-	cv::convertScaleAbs( corners, corners );
 
-	smooth.convertTo(smooth, CV_8U);
-	cv::Canny(smooth, edge, 5, 5*3, 5);
-	cv::normalize(edge, edge, 0, 255, cv::NORM_MINMAX, CV_8UC1);
 
-	//cv::cvtColor(result, result, CV_BGR2HSV);
+//	smooth.convertTo(smooth, CV_8U);
+//	cv::Canny(smooth, edge, 5, 5*3, 5);
+//	cv::normalize(edge, edge, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+
 	std::vector<cv::Mat> channels;
 	cv::split(result, channels);
 
@@ -116,16 +144,55 @@ void findExtrema(const cv::Mat img)
 			orientation.at<float>(idx) = atan2(dy, dx);
 			magnitude.at<float>(idx) = sqrt(dx * dx + dy * dy);
 
-
-			channels[0].at<float>(idx) = (atan2(dy, dx) + M_PI) * 180.0/M_2_PI;
+			channels[0].at<float>(idx) = (atan2(dy, dx) + M_PI) * 180.0/(2*M_PI);
 			channels[1].at<float>(idx) = sqrt(dx * dx + dy * dy);
-			channels[2].at<float>(idx) = 255;
-			//cv::Vec3b pixel(((atan2(dy, dx) + M_PI) * 180.0/M_2_PI), sqrt(dx * dx + dy * dy), 255);
-
-			//result.at<cv::Vec3b>(idx) = pixel;
 		}
 	}
 
+	// Find max in each 1/3rd
+	float maxA = 0, maxB = 0, maxC = 0, maxD = 0, maxE = 0;
+	cv::Point idxA, idxB, idxC, idxD, idxE;
+	for (int v = 0; v < img.rows; v++)
+	{
+		for (int u = 0; u < img.cols; u++)
+		{
+			int idx = (v * img.cols) + u;
+			float intensity = fabs(corners.at<float>(idx));
+			float localOrientation = channels[0].at<float>(idx);
+			if (u < img.cols/4.0)
+			{
+				float score = pointScore(intensity, localOrientation, cv::Point(u,v), 0.0, targetA);
+				if (score > maxA) { maxA = score; idxA = cv::Point(u,v); }
+			}
+			else if (u < 3.0*img.cols/7.0)
+			{
+				float score = pointScore(intensity, localOrientation, cv::Point(u,v), M_PI/4.0, targetD);
+				if (score > maxD) { maxD = score; idxD = cv::Point(u,v); }
+			}
+			else if (u < 4.0*img.cols/7.0)
+			{
+				float score = pointScore(intensity, localOrientation, cv::Point(u,v), M_PI/4.0, targetB);
+				if (score > maxB) { maxB = score; idxB = cv::Point(u,v); }
+			}
+			else if (u < 3.0*img.cols/4.0)
+			{
+				float score = pointScore(intensity, localOrientation, cv::Point(u,v), M_PI/4.0, targetE);
+				if (score > maxE) { maxE = score; idxE = cv::Point(u,v); }
+			}
+			else
+			{
+				float score = pointScore(intensity, localOrientation, cv::Point(u,v), 0.0, targetC);
+				if (score > maxC) { maxC = score; idxC = cv::Point(u,v); }
+			}
+		}
+
+	}
+	/// Normalizing
+	cv::normalize( corners, corners, 0, 255, cv::NORM_MINMAX, CV_32FC1, cv::Mat() );
+	cv::convertScaleAbs( corners, corners );
+
+
+	// Reassemble HSV channels
 	cv::normalize(channels[1], channels[1], 0, 255, cv::NORM_MINMAX, CV_32FC1);
 	channels[0].convertTo(channels[0], CV_8U);
 	channels[1].convertTo(channels[1], CV_8U);
@@ -134,10 +201,21 @@ void findExtrema(const cv::Mat img)
 
 	cv::cvtColor(result, result, CV_HSV2BGR);
 
+	// Circle targets
+	cv::circle(result, targetA, 4, cv::Scalar(0, 0, 255));
+	cv::circle(result, targetB, 4, cv::Scalar(0, 0, 255));
+	cv::circle(result, targetC, 4, cv::Scalar(0, 0, 255));
+	cv::circle(result, targetD, 4, cv::Scalar(0, 0, 255));
+	cv::circle(result, targetE, 4, cv::Scalar(0, 0, 255));
+	// Circle keypoints
+	cv::circle(result, idxA, 4, cv::Scalar::all(255));
+	cv::circle(result, idxB, 4, cv::Scalar::all(255));
+	cv::circle(result, idxC, 4, cv::Scalar::all(255));
+	cv::circle(result, idxD, 4, cv::Scalar::all(255));
+	cv::circle(result, idxE, 4, cv::Scalar::all(255));
+
 	cv::normalize(magnitude, magnitude, 0, 1.0, cv::NORM_MINMAX, CV_32FC1);
 	cv::normalize(orientation, orientation, 0, 1.0, cv::NORM_MINMAX, CV_32FC1);
-	std::cerr << "Hello." << std::endl;
-	//cv::normalize(result, result, 0, 180, cv::NORM_MINMAX, CV_8UC3);
 
 	cv::imshow("Hello", result);
 }
