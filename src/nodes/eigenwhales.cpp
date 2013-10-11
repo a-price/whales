@@ -3,7 +3,7 @@
  * \brief
  *
  * \author Andrew Price
- * \date 9 30, 2013
+ * \date September 30, 2013
  *
  * \copyright
  *
