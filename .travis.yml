@@ -3,9 +3,17 @@ language: cpp
 compiler:
   - gcc
 
-before_script:
-  - mkdir build
-  - cd build
-  - cmake ..
-
-script: make
+before_install:
+  - sudo pip install cpplint rosdep
+  - sudo rosdep init && rosdep update 
+  - sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu precise main" > /etc/apt/sources.list.d/ros-latest.list'
+  - wget http://packages.ros.org/ros.key -O - | sudo apt-key add -
+  - sudo apt-get update -qq
+install:
+  - rosdep install --from-paths .. --ignore-src --rosdistro groovy
+  - source /opt/ros/groovy/setup.bash
+  - mkdir -p ~/catkin_ws/src && pushd ~/catkin_ws
+  - catkin_init_workspace src
+  - ln -s `eval echo $(dirs +1)` src/
+script:
+  - catkin_make all 
