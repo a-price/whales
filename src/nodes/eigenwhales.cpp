@@ -70,11 +70,13 @@ int main(int argc, char** argv)
 
 	// Load a database of images
 	std::vector<std::string> filenames = enumeratePackageDirectory("package://whales/data/images/eigen/");
-	const int numFiles = filenames.size();
+	int numFiles = filenames.size();
 	originalImages.reserve(numFiles);
+	int numFails = 0;
 	for (int imgIdx = 0; imgIdx < numFiles; imgIdx++)
 	{
 		cv::Mat temp = cv::imread(filenames[imgIdx], CV_LOAD_IMAGE_GRAYSCALE);
+		if (!temp.data) { numFails++; continue;}
 		// Resize
 		cv::resize(temp, temp, cv::Size(WIDTH, HEIGHT));
 		temp.convertTo(temp, CV_32F);
@@ -86,6 +88,7 @@ int main(int argc, char** argv)
 	}
 	//cv::imshow("img", originalImages[0]);
 
+	numFiles -= numFails;
 	std::cerr << "Number of Images: " << numFiles << std::endl;
 
 	// Vectorize
